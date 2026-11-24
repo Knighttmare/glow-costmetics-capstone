@@ -1,6 +1,6 @@
 # Glow Cosmetics Capstone Specification
 
-**Build:** Destiny John's project ( T4y-1246 ) · November 2026 · v1
+**Build:** Solo student project · November 2026 · v1
 
 ## 1. Problem & Context
 
@@ -17,17 +17,25 @@ Customers in Benin City and across Nigeria can browse product categories, check 
 - Responsive green-and-white static website using `index.html`, `styles.css`, and vanilla `script.js`.
 - Four brand images in `images/` (hero and three categories); image-generation prompts recorded in `PROMPTS.md`.
 - Interactive nationwide delivery checker for Benin City and other Nigerian cities.
-- Quick enquiry modal collecting name, city, enquiry type, and message; `ENQUIRY_FORM_URL` is ready for the team's shared n8n form link.
+- Separate Quick Enquire and Order actions on product cards, plus order access from the navigation and hero.
+- Quick Enquiry modal shows category and availability, then collects enquiry type, skin type, name, city, and note; product enquiry options exclude delivery quotes.
+- Order modal supports multiple catalog items with quantities, skin type, and required delivery details.
+- Order catalog: Gentle Hydrating Cleanser, Soothing Rosewater Toner, Daily Barrier Moisturiser, Shea & Ceramide Body Lotion, Vitamin C Glow Serum, and Daily SPF 50 Sunscreen; bleaching products are excluded.
+- Order submission saves locally, generates a `GLW-XXXX` tracking code, and opens WhatsApp with the order summary. Optional `ENQUIRY_FORM_URL` webhook forwarding is configurable.
+- Customer order tracking and a Staff / Admin Orders dashboard use the browser's saved order records.
 - Glow Cosmetics assistant/chat widget that answers approved shop FAQs and follows the Never Rule.
 
 ## 4. Data & Integration
 
-The FAQ knowledge covers product authenticity, skin-concern escalation, bleaching-cream policy, nationwide delivery, ordering, and store information. Enquiry fields are name, city, enquiry type, category (optional), and note/message. These inputs are prepared for the group n8n workflow, which will route enquiries as `HOT`, `WARM`, or `CHECK` and connect to Google Sheets, Gmail, and Telegram. The n8n workflow is a planned integration; the static v1 uses the configurable form URL or a copied enquiry summary.
+The FAQ knowledge covers product authenticity, skin-concern escalation, bleaching-cream policy, nationwide delivery, ordering, and store information. Quick enquiries contain category, availability, enquiry type, skin type, name, city, and note. Orders contain a tracking code, timestamp, item names and quantities, skin type, full name, phone, state/city, delivery address, delivery notes, and status (`New`, `Confirmed`, or `Dispatched`). Orders persist in browser `localStorage`, can be looked up by tracking code, and may be POSTed as JSON to `ENQUIRY_FORM_URL` when configured. Placing an order opens a prefilled WhatsApp message to `+234 803 000 0194`; general enquiries use the store line. Staff can mark QA orders as test entries and clear only those marked entries. The data can also feed the planned group n8n workflow for `HOT`, `WARM`, or `CHECK` routing and Google Sheets, Gmail, and Telegram connections.
 
 ## 5. Success Tests
 
 - The page loads cleanly on mobile and desktop with all four images visible.
 - The delivery checker returns the expected confirmation for Benin City and other Nigerian cities.
-- Enquire / Book opens the modal; customers can submit to the configured form URL or copy their enquiry summary.
+- Each category offers Quick Enquire and Order; enquiry modal shows category context and the team availability badge.
+- Customers can choose multiple safe catalog items with quantities and must enter delivery details before ordering.
+- Each order is saved locally with a unique `GLW-XXXX` tracking code and status `New`, and WhatsApp opens with the order and delivery summary.
+- Tracking lookup returns saved order summary and status; staff can update it to `Confirmed` or `Dispatched` and clear test entries.
 - The assistant escalates skin concerns to Grace and does not recommend products.
 - Project files are committed to GitHub.
