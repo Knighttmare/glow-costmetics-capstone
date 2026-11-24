@@ -1,8 +1,18 @@
 // Set this to the team's n8n webhook URL to forward saved orders automatically.
 const ENQUIRY_FORM_URL = "";
+const ADMIN_PIN = "2468";
 const ORDER_WHATSAPP_NUMBER = "2348030000194";
 const ENQUIRY_WHATSAPP_NUMBER = "2349066985431";
 const ORDERS_KEY = "glowCosmeticsOrders";
+const STOCK_KEY = "glowCosmeticsStock";
+const PRODUCTS = [
+  { id: "gentle-cleanser", name: "Gentle Hydrating Cleanser", category: "Gentle Cleansers & Toners", summary: "A gentle daily cleanser for a simple skincare routine." },
+  { id: "rosewater-toner", name: "Soothing Rosewater Toner", category: "Gentle Cleansers & Toners", summary: "A rosewater toner for a refreshing everyday routine." },
+  { id: "barrier-moisturiser", name: "Daily Barrier Moisturiser", category: "Nourishing Moisturisers & Lotions", summary: "A daily moisturiser for everyday skin hydration." },
+  { id: "shea-lotion", name: "Shea & Ceramide Body Lotion", category: "Nourishing Moisturisers & Lotions", summary: "A nourishing body lotion for everyday use." },
+  { id: "vitamin-c-serum", name: "Vitamin C Glow Serum", category: "Serums & Daily Sun Care", summary: "A vitamin C serum in the daily skincare collection." },
+  { id: "daily-sunscreen", name: "Daily SPF 50 Sunscreen", category: "Serums & Daily Sun Care", summary: "Daily sun care with SPF 50." }
+];
 
 const menuToggle = document.querySelector(".menu-toggle");
 const navLinks = document.querySelector(".nav-links");
@@ -10,11 +20,13 @@ const enquiryModal = document.querySelector("#enquiry-modal");
 const orderModal = document.querySelector("#order-modal");
 const trackingModal = document.querySelector("#tracking-modal");
 const adminModal = document.querySelector("#admin-modal");
+const adminGateModal = document.querySelector("#admin-gate-modal");
 const enquiryForm = document.querySelector("#enquiry-form");
 const orderForm = document.querySelector("#order-form");
 const copyStatus = document.querySelector("#copy-status");
 let activeDialog = null;
 let returnFocus = null;
+let activeStatusFilter = "All";
 
 if (menuToggle && navLinks) {
   menuToggle.addEventListener("click", () => {
@@ -57,11 +69,18 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-function openEnquiry(category = "", enquiryType = "") {
+function stockAvailable(productId) {
+  return readStock()[productId] !== false;
+}
+function openEnquiry(productId = "", enquiryType = "") {
   enquiryForm.reset();
-  const title = category || "General product enquiry";
-  document.querySelector("#enquiry-product-name").textContent = title;
-  document.querySelector("#enquiry-note").value = category;
+  const product = PRODUCTS.find((item) => item.id === productId);
+  document.querySelector("#enquiry-product-name").textContent = product?.name || "Glow Cosmetics product enquiry";
+  document.querySelector("#enquiry-product-summary").textContent = product?.summary || "Ask the team about products and category availability.";
+  const status = document.querySelector("#enquiry-stock-status");
+  status.textContent = product ? (stockAvailable(product.id) ? "Available" : "Sold Out") : "Check Availability with Team";
+  status.classList.toggle("sold-out", Boolean(product && !stockAvailable(product.id)));
+  document.querySelector("#enquiry-note").value = product ? product.name : "";
   if (enquiryType) document.querySelector("#enquiry-type").value = enquiryType;
   copyStatus.textContent = "";
   openDialog(enquiryModal, "#enquiry-type");
@@ -71,13 +90,13 @@ document.querySelectorAll("a[data-enquiry]").forEach((link) => link.addEventList
   event.preventDefault();
   openEnquiry();
 }));
-document.querySelectorAll(".quick-enquire").forEach((button) => button.addEventListener("click", () => openEnquiry(button.dataset.category)));
+document.querySelectorAll(".quick-enquire").forEach((button) => button.addEventListener("click", () => openEnquiry(button.dataset.product)));
 function enquiryMessage() {
   const data = new FormData(enquiryForm);
   return [
     `Enquiry Type: ${data.get("type")}`,
     `Product / Category: ${document.querySelector("#enquiry-product-name").textContent}`,
-    "Availability: Check Availability with Team",
+    `Availability: ${document.querySelector("#enquiry-stock-status").textContent}`,
     `Skin Type: ${data.get("skinType") || "Not specified"}`,
     `Name: ${data.get("name")}`,
     `City: ${data.get("city")}`,
@@ -91,17 +110,23 @@ enquiryForm.addEventListener("submit", (event) => {
   copyStatus.textContent = "Opening WhatsApp with your enquiry details.";
 });
 
-function openOrder(category = "") {
+function openOrder(productId = "") {
   orderForm.reset();
   document.querySelector("#order-error").textContent = "";
   document.querySelector("#order-status").textContent = "";
   document.querySelector("#order-confirmation").hidden = true;
+  const product = PRODUCTS.find((item) => item.id === productId);
   const context = document.querySelector("#order-category-context");
-  context.hidden = !category;
-  context.textContent = category ? `Browsing category: ${category}` : "";
+  context.hidden = !product;
+  context.textContent = product ? `Starting with ${product.name}; you can add more available items below.` : "";
+  syncStockUI();
+  if (product && stockAvailable(product.id)) {
+    const input = orderForm.querySelector(`input[data-product-id="${product.id}"]`);
+    if (input) input.value = "1";
+  }
   openDialog(orderModal, ".product-picker button");
 }
-document.querySelectorAll("[data-open-order]").forEach((button) => button.addEventListener("click", () => openOrder(button.dataset.category || "")));
+document.querySelectorAll("[data-open-order]").forEach((button) => button.addEventListener("click", () => openOrder(button.dataset.product || "")));
 document.querySelectorAll("[data-quantity]").forEach((button) => button.addEventListener("click", () => {
   const input = button.parentElement.querySelector("input");
   input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) + Number(button.dataset.quantity)));
@@ -109,8 +134,59 @@ document.querySelectorAll("[data-quantity]").forEach((button) => button.addEvent
 }));
 
 function readOrders() {
-  try { return JSON.parse(localStorage.getItem(ORDERS_KEY) || "[]"); }
+  try { const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) || "[]"); return Array.isArray(orders) ? orders : []; }
   catch { return []; }
+}
+function readStock() {
+  let saved = {};
+  try { const parsed = JSON.parse(localStorage.getItem(STOCK_KEY) || "{}"); saved = parsed && typeof parsed === "object" ? parsed : {}; } catch { saved = {}; }
+  return Object.fromEntries(PRODUCTS.map((product) => [product.id, saved[product.id] !== false]));
+}
+function saveStock(stock) {
+  localStorage.setItem(STOCK_KEY, JSON.stringify(stock));
+  syncStockUI();
+  renderAdminStock();
+}
+function syncStockUI() {
+  const stock = readStock();
+  PRODUCTS.forEach((product) => {
+    const available = stock[product.id];
+    document.querySelectorAll(`[data-product-card="${product.id}"]`).forEach((card) => {
+      const status = card.querySelector("[data-product-status]");
+      const stamp = card.querySelector("[data-stock-stamp]");
+      if (status) { status.textContent = available ? "Available" : "Sold Out"; status.classList.toggle("sold-out", !available); }
+      if (stamp) stamp.hidden = available;
+      card.classList.toggle("is-sold-out", !available);
+    });
+    document.querySelectorAll(`[data-product-id="${product.id}"][data-product-name]`).forEach((input) => {
+      const row = input.closest(".product-option");
+      const status = row?.querySelector("[data-order-stock]");
+      if (status) { status.textContent = available ? "Available" : "Sold Out"; status.classList.toggle("sold-out", !available); }
+      input.disabled = !available;
+      row?.querySelectorAll("button[data-quantity]").forEach((button) => { button.disabled = !available; });
+      if (!available) input.value = "0";
+      row?.classList.toggle("is-sold-out", !available);
+    });
+  });
+}
+function renderAdminStock() {
+  const grid = document.querySelector("#admin-stock-grid");
+  if (!grid) return;
+  grid.replaceChildren();
+  const stock = readStock();
+  PRODUCTS.forEach((product) => {
+    const row = document.createElement("div"); row.className = "admin-stock-row";
+    const name = document.createElement("span"); name.textContent = product.name;
+    const label = document.createElement("label");
+    const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = stock[product.id];
+    toggle.setAttribute("aria-label", `${product.name} available`);
+    const status = document.createElement("span"); status.textContent = stock[product.id] ? "Available" : "Sold Out";
+    toggle.addEventListener("change", () => {
+      const next = readStock(); next[product.id] = toggle.checked;
+      try { saveStock(next); } catch { status.textContent = "Could not save stock status"; }
+    });
+    label.append(toggle, status); row.append(name, label); grid.append(row);
+  });
 }
 function writeOrders(orders) {
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
@@ -123,7 +199,7 @@ function createTrackingCode(orders) {
 }
 function selectedItems() {
   return [...orderForm.querySelectorAll("[data-product-name]")]
-    .map((input) => ({ name: input.dataset.productName, quantity: Number(input.value) }))
+    .map((input) => ({ name: input.dataset.productName, productId: input.dataset.productId, quantity: Number(input.value) }))
     .filter((item) => item.quantity > 0);
 }
 function orderWhatsAppMessage(order) {
@@ -234,27 +310,37 @@ function renderAdminOrders() {
   const container = document.querySelector("#admin-orders");
   if (!container) return;
   container.replaceChildren();
-  const orders = readOrders().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const query = document.querySelector("#admin-search").value.trim().toLowerCase();
+  const orders = readOrders().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).filter((order) => {
+    return (activeStatusFilter === "All" || order.status === activeStatusFilter) && (!query || JSON.stringify(order).toLowerCase().includes(query));
+  });
   if (!orders.length) { container.textContent = "No orders saved in this browser yet."; return; }
   orders.forEach((order) => {
     const card = document.createElement("article"); card.className = "admin-order-card";
     const heading = document.createElement("div"); heading.className = "admin-order-heading";
     const code = document.createElement("strong"); code.textContent = order.trackingCode;
     const date = document.createElement("time"); date.dateTime = order.timestamp; date.textContent = new Date(order.timestamp).toLocaleString();
-    heading.append(code, date); card.append(heading);
-    const itemLines = document.createElement("p"); itemLines.textContent = `Items: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}`; card.append(itemLines);
-    const customer = document.createElement("p"); customer.textContent = `${order.delivery.fullName} · ${order.delivery.phone} · ${order.delivery.stateCity}`; card.append(customer);
-    const address = document.createElement("p"); address.textContent = `Address: ${order.delivery.address}. Delivery notes: ${order.delivery.notes}`; card.append(address);
+    const badge = document.createElement("span"); badge.className = "admin-status-badge"; badge.textContent = order.status;
+    heading.append(code, date, badge); card.append(heading);
+    const itemLines = document.createElement("ul"); itemLines.className = "admin-item-list";
+    order.items.forEach((item) => { const line = document.createElement("li"); line.textContent = `${item.quantity} x ${item.name}`; itemLines.append(line); });
+    card.append(itemLines);
     const skin = document.createElement("p"); skin.textContent = `Skin type: ${order.skinType}`; card.append(skin);
-    const label = document.createElement("label"); label.textContent = "Order status ";
-    const select = document.createElement("select");
-    ["New", "Confirmed", "Dispatched"].forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; select.append(option); });
-    select.value = order.status; select.addEventListener("change", () => {
-      const current = readOrders();
-      const record = current.find((item) => item.trackingCode === order.trackingCode);
-      if (record) { record.status = select.value; writeOrders(current); renderAdminOrders(); }
+    const delivery = order.delivery || {};
+    [["Name", delivery.fullName], ["Phone", delivery.phone], ["City / State", delivery.stateCity], ["Delivery Address", delivery.address], ["Delivery Notes", delivery.notes]].forEach(([label, value]) => {
+      const detail = document.createElement("p"); detail.textContent = `${label}: ${value || "—"}`; card.append(detail);
     });
-    label.append(select); card.append(label); container.append(card);
+    const actions = document.createElement("div"); actions.className = "order-status-actions";
+    ["New", "Confirmed", "Dispatched", "Delivered"].forEach((value) => {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = value;
+      button.classList.toggle("active", order.status === value);
+      button.addEventListener("click", () => {
+        const current = readOrders(); const record = current.find((item) => item.trackingCode === order.trackingCode);
+        if (record) { record.status = value; writeOrders(current); renderAdminOrders(); }
+      });
+      actions.append(button);
+    });
+    card.append(actions); container.append(card);
     const testLabel = document.createElement("label");
     testLabel.className = "test-entry-toggle";
     const testToggle = document.createElement("input");
@@ -269,9 +355,28 @@ function renderAdminOrders() {
     card.append(testLabel);
   });
 }
-document.querySelectorAll("[data-open-admin]").forEach((button) => button.addEventListener("click", () => {
-  renderAdminOrders();
+function openAdminGate() {
+  document.querySelector("#admin-pin-input").value = "";
+  document.querySelector("#admin-pin-error").textContent = "";
+  openDialog(adminGateModal, "#admin-pin-input");
+}
+function authenticateAdmin() {
+  const input = document.querySelector("#admin-pin-input");
+  if (input.value !== ADMIN_PIN) { document.querySelector("#admin-pin-error").textContent = "That PIN is not correct."; input.focus(); return; }
+  const accessTrigger = returnFocus;
+  closeDialog(adminGateModal);
+  syncStockUI(); renderAdminStock(); renderAdminOrders();
   openDialog(adminModal, ".modal-close");
+  returnFocus = accessTrigger;
+}
+document.querySelector("#open-admin-dashboard").addEventListener("click", authenticateAdmin);
+document.querySelector("#admin-pin-input").addEventListener("keydown", (event) => { if (event.key === "Enter") authenticateAdmin(); });
+if (new URLSearchParams(window.location.search).has("admin")) openAdminGate();
+document.querySelector("#admin-search").addEventListener("input", renderAdminOrders);
+document.querySelectorAll("[data-status-filter]").forEach((button) => button.addEventListener("click", () => {
+  activeStatusFilter = button.dataset.statusFilter;
+  document.querySelectorAll("[data-status-filter]").forEach((filter) => filter.classList.toggle("active", filter === button));
+  renderAdminOrders();
 }));
 document.querySelector("#clear-orders").addEventListener("click", () => {
   const orders = readOrders();
@@ -298,54 +403,10 @@ document.querySelectorAll("[data-city]").forEach((button) => button.addEventList
 document.querySelector("#check-city").addEventListener("click", () => checkCity(document.querySelector("#delivery-city").value));
 document.querySelector("#delivery-city").addEventListener("keydown", (event) => { if (event.key === "Enter") checkCity(event.currentTarget.value); });
 
-const launcher = document.querySelector("#chat-launcher");
-const chatPanel = document.querySelector("#chat-panel");
-const chatMessages = document.querySelector("#chat-messages");
-function setChatOpen(open) {
-  chatPanel.hidden = !open;
-  launcher.setAttribute("aria-expanded", String(open));
-  if (open) document.querySelector("#chat-input").focus();
-}
-launcher.addEventListener("click", () => setChatOpen(chatPanel.hidden));
-document.querySelector("#chat-close").addEventListener("click", () => setChatOpen(false));
-function addMessage(text, sender) {
-  const bubble = document.createElement("p");
-  bubble.className = `chat-bubble ${sender}`;
-  bubble.textContent = text;
-  if (sender === "assistant" && /Grace, our trained staff member/.test(text)) {
-    const action = document.createElement("button");
-    action.className = "chat-grace-action";
-    action.type = "button";
-    action.textContent = "Quick Enquire with Grace";
-    action.addEventListener("click", () => openEnquiry("", "Speak with Grace about a Skin Concern"));
-    bubble.append(document.createElement("br"), action);
-  }
-  chatMessages.append(bubble);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-function assistantReply(question) {
-  const q = question.toLowerCase();
-  if (/dark spot|dry skin|cream for|skin concern|skin problem|reaction|allerg|rash|itch|acne|what should i use|what can i use/.test(q)) return "I can’t recommend products or give medical advice for skin concerns, reactions, or allergies. Grace, our trained staff member, handles these questions. Please use Quick Enquire and choose ‘Speak with Grace about a Skin Concern’.";
-  if (/bleach|lighten/.test(q)) return "We do not sell bleaching creams or skin-lightening products. I can help with store or delivery information if you like.";
-  if (/original|authentic|genuine/.test(q)) return "Yes! Glow Cosmetics offers 100% authentic skincare products.";
-  if (/deliver|delivery|city|dispatch|pickup|pick up/.test(q)) return "Yes, we deliver nationwide across Nigeria. Dispatch is typically 24–48 hours; Benin City pickup and delivery are also available. Use our city checker for details.";
-  if (/order|buy|payment|pay|availability/.test(q)) return "Choose products and quantities, enter your delivery details, then place the order via WhatsApp. You’ll receive a tracking code.";
-  if (/hour|open|close|time|address|location|where|phone|contact/.test(q)) return "Find us at Shop 12, New Benin Market Road, New Benin, Benin City. We’re open Monday–Saturday, 8:30 AM–6:30 PM, and closed Sunday. Call or WhatsApp +234 906 698 5431.";
-  return "I can help with authentic products, bleaching-cream policy, delivery, ordering, and store hours. For skin questions or reactions, Grace will help through Quick Enquire.";
-}
-function sendChat(text) {
-  const question = text.trim();
-  if (!question) return;
-  addMessage(question, "visitor");
-  addMessage(assistantReply(question), "assistant");
-}
-document.querySelector("#chat-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const input = document.querySelector("#chat-input");
-  sendChat(input.value);
-  input.value = "";
-});
-document.querySelectorAll("[data-chat]").forEach((button) => button.addEventListener("click", () => sendChat(button.dataset.chat)));
-
+syncStockUI();
 renderAdminOrders();
+window.addEventListener("storage", (event) => {
+  if (event.key === STOCK_KEY) syncStockUI();
+  if (event.key === ORDERS_KEY) renderAdminOrders();
+});
 document.querySelector("#year").textContent = new Date().getFullYear();
