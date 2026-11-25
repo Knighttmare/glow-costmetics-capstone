@@ -1,22 +1,23 @@
 // Set this to the team's n8n webhook URL to forward saved orders automatically.
 const ENQUIRY_FORM_URL = "";
 const ADMIN_PIN = "2468";
-const ORDER_WHATSAPP_NUMBER = "2348030000194";
+const ORDER_WHATSAPP_NUMBER = "2349066985431";
 const ENQUIRY_WHATSAPP_NUMBER = "2349066985431";
 const ORDERS_KEY = "glowCosmeticsOrders";
 const STOCK_KEY = "glowCosmeticsStock";
 const PRODUCTS = [
-  { id: "gentle-cleanser", name: "Gentle Hydrating Cleanser", category: "Gentle Cleansers & Toners", summary: "A gentle daily cleanser for a simple skincare routine." },
-  { id: "rosewater-toner", name: "Soothing Rosewater Toner", category: "Gentle Cleansers & Toners", summary: "A rosewater toner for a refreshing everyday routine." },
-  { id: "barrier-moisturiser", name: "Daily Barrier Moisturiser", category: "Nourishing Moisturisers & Lotions", summary: "A daily moisturiser for everyday skin hydration." },
-  { id: "shea-lotion", name: "Shea & Ceramide Body Lotion", category: "Nourishing Moisturisers & Lotions", summary: "A nourishing body lotion for everyday use." },
-  { id: "vitamin-c-serum", name: "Vitamin C Glow Serum", category: "Serums & Daily Sun Care", summary: "A vitamin C serum in the daily skincare collection." },
-  { id: "daily-sunscreen", name: "Daily SPF 50 Sunscreen", category: "Serums & Daily Sun Care", summary: "Daily sun care with SPF 50." }
+  { id: "gentle-cleanser", name: "Gentle Hydrating Cleanser", category: "Gentle Cleansers & Toners", summary: "A gentle cleanser for removing everyday surface impurities.", usage: ["Wet face with lukewarm water.", "Massage a small amount gently over skin.", "Rinse thoroughly and pat dry."] },
+  { id: "rosewater-toner", name: "Soothing Rosewater Toner", category: "Gentle Cleansers & Toners", summary: "A refreshing rosewater toner for a simple daily routine.", usage: ["Apply a small amount to a cotton pad or clean hands.", "Sweep or pat gently over clean skin.", "Allow it to dry before the next routine step."] },
+  { id: "barrier-moisturiser", name: "Daily Barrier Moisturiser", category: "Nourishing Moisturisers & Lotions", summary: "An everyday moisturiser that helps keep skin feeling hydrated.", usage: ["Apply a small amount to clean, dry skin.", "Spread gently over the face and neck.", "Use as directed on the product packaging."] },
+  { id: "shea-lotion", name: "Shea & Ceramide Body Lotion", category: "Nourishing Moisturisers & Lotions", summary: "A nourishing body lotion for everyday moisture.", usage: ["Apply to clean skin.", "Massage gently over the body until absorbed.", "Follow the directions on the product packaging."] },
+  { id: "vitamin-c-serum", name: "Vitamin C Glow Serum", category: "Serums & Daily Sun Care", summary: "A lightweight vitamin C serum in the daily skincare collection.", usage: ["Apply a small amount to clean, dry skin.", "Spread gently over the face, avoiding the eyes.", "Follow the directions on the product packaging."] },
+  { id: "daily-sunscreen", name: "Daily SPF 50 Sunscreen", category: "Serums & Daily Sun Care", summary: "A daily sun-care product with SPF 50.", usage: ["Apply evenly to exposed skin before going outdoors.", "Reapply as directed on the product packaging.", "Use the amount and directions stated on the label."] }
 ];
 
 const menuToggle = document.querySelector(".menu-toggle");
 const navLinks = document.querySelector(".nav-links");
 const enquiryModal = document.querySelector("#enquiry-modal");
+const productInfoModal = document.querySelector("#product-info-modal");
 const orderModal = document.querySelector("#order-modal");
 const trackingModal = document.querySelector("#tracking-modal");
 const adminModal = document.querySelector("#admin-modal");
@@ -72,15 +73,8 @@ document.addEventListener("keydown", (event) => {
 function stockAvailable(productId) {
   return readStock()[productId] !== false;
 }
-function openEnquiry(productId = "", enquiryType = "") {
+function openEnquiry(enquiryType = "") {
   enquiryForm.reset();
-  const product = PRODUCTS.find((item) => item.id === productId);
-  document.querySelector("#enquiry-product-name").textContent = product?.name || "Glow Cosmetics product enquiry";
-  document.querySelector("#enquiry-product-summary").textContent = product?.summary || "Ask the team about products and category availability.";
-  const status = document.querySelector("#enquiry-stock-status");
-  status.textContent = product ? (stockAvailable(product.id) ? "Available" : "Sold Out") : "Check Availability with Team";
-  status.classList.toggle("sold-out", Boolean(product && !stockAvailable(product.id)));
-  document.querySelector("#enquiry-note").value = product ? product.name : "";
   if (enquiryType) document.querySelector("#enquiry-type").value = enquiryType;
   copyStatus.textContent = "";
   openDialog(enquiryModal, "#enquiry-type");
@@ -90,13 +84,33 @@ document.querySelectorAll("a[data-enquiry]").forEach((link) => link.addEventList
   event.preventDefault();
   openEnquiry();
 }));
-document.querySelectorAll(".quick-enquire").forEach((button) => button.addEventListener("click", () => openEnquiry(button.dataset.product)));
+function openProductInfo(productId) {
+  const product = PRODUCTS.find((item) => item.id === productId);
+  if (!product) return;
+  document.querySelector("#product-detail-name").textContent = product.name;
+  document.querySelector("#product-detail-category").textContent = product.category;
+  document.querySelector("#product-detail-summary").textContent = product.summary;
+  const status = document.querySelector("#product-detail-status");
+  const available = stockAvailable(product.id);
+  status.textContent = available ? "Available" : "Sold Out";
+  status.classList.toggle("sold-out", !available);
+  const steps = document.querySelector("#product-detail-steps");
+  steps.replaceChildren(...product.usage.map((step) => { const item = document.createElement("li"); item.textContent = step; return item; }));
+  document.querySelector("#product-info-order").dataset.product = product.id;
+  openDialog(productInfoModal, "[data-close-modal]");
+}
+document.querySelectorAll(".quick-enquire").forEach((button) => button.addEventListener("click", () => openProductInfo(button.dataset.product)));
+document.querySelector("#product-info-order").addEventListener("click", (event) => {
+  const productId = event.currentTarget.dataset.product;
+  const trigger = returnFocus;
+  closeDialog(productInfoModal);
+  openOrder(productId);
+  returnFocus = trigger;
+});
 function enquiryMessage() {
   const data = new FormData(enquiryForm);
   return [
     `Enquiry Type: ${data.get("type")}`,
-    `Product / Category: ${document.querySelector("#enquiry-product-name").textContent}`,
-    `Availability: ${document.querySelector("#enquiry-stock-status").textContent}`,
     `Skin Type: ${data.get("skinType") || "Not specified"}`,
     `Name: ${data.get("name")}`,
     `City: ${data.get("city")}`,
@@ -214,7 +228,7 @@ function orderWhatsAppMessage(order) {
     `Phone Number: ${order.delivery.phone}`,
     `State / City: ${order.delivery.stateCity}`,
     `Full Delivery Address: ${order.delivery.address}`,
-    `Delivery Notes: ${order.delivery.notes}`
+    `Delivery Notes: ${order.delivery.notes || "None"}`
   ].join("\n");
 }
 function forwardOrderToWebhook(order) {
